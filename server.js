@@ -4,7 +4,10 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const PORT = 8080;
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/index.html');
 });
@@ -12,8 +15,6 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
-
-// asdf
 
 const WORLD = { width: 3200, height: 2200 };
 const TICK_RATE = 1000 / 60;
