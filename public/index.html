@@ -241,13 +241,15 @@ function hideCreateRoom() {
 
 function showSingleplayer() {
     enterGame(() => {
-    socket.emit('joinAny');
-});
+        socket.emit('joinAny');
+    });
+}
 
 function joinAny() {
     enterGame(() => {
-    socket.emit('joinAny');
-});
+        socket.emit('joinAny');
+    });
+}
 
 function refreshRooms() {
     socket.emit('getRooms');
@@ -256,9 +258,11 @@ function refreshRooms() {
 function submitCreateRoom() {
     const name = document.getElementById('roomNameInput').value.trim() || 'New Room';
     const password = document.getElementById('roomPasswordInput').value;
+
     enterGame(() => {
-    socket.emit('joinAny');
-});
+        socket.emit('createRoom', { name, password });
+    });
+}
 
 function enterGame(callback) {
     if (!socket.connected) {
