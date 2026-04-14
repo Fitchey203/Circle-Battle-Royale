@@ -78,7 +78,7 @@ button {
     cursor: pointer;
 }
 
-input[type="text"], input[type="color"] {
+#uiPanel input[type="text"], #uiPanel input[type="color"] {
     margin-top: 4px;
     margin-bottom: 8px;
     width: 100%;
@@ -102,42 +102,106 @@ input[type="text"], input[type="color"] {
 }
 </style>
 </head>
-<body>
+<!-- MAIN MENU -->
+<div id="mainMenu" style="
+    position:fixed; inset:0; z-index:100;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, #0d1f3c 0%, #060d18 100%);
+">
+    <div style="font-size:52px; font-weight:900; letter-spacing:3px; margin-bottom:8px; color:#60a5fa; text-shadow: 0 0 30px rgba(96,165,250,0.5);">LOOT ARENA</div>
+    <div style="font-size:15px; opacity:0.5; margin-bottom:60px; letter-spacing:2px;">CIRCLE BATTLE ROYALE</div>
 
-<div id="uiPanel">
-    <button id="startRoundBtn">START ROUND</button><br>
-    Name:
-    <input id="nameInput" type="text" maxlength="16" value="Fitchey">
-    Color:
-    <input id="colorInput" type="color" value="#38bdf8">
+    <div style="display:flex; flex-direction:column; gap:14px; width:260px;">
+        <button onclick="showSingleplayer()" style="font-size:17px; padding:14px; border-radius:12px; background:#1d4ed8;">⚔ SINGLEPLAYER</button>
+        <button onclick="showMultiplayer()" style="font-size:17px; padding:14px; border-radius:12px; background:#0f766e;">🌐 MULTIPLAYER</button>
+    </div>
 
-    <div id="roundInfo"></div>
-    <div id="playerInfo" style="margin-top:10px;"></div>
-
-    <div style="margin-top:10px; font-size:13px; opacity:0.92;">
-        W A S D move<br>
-        Shift sprint<br>
-        Hold left click to fire<br>
-        E open chest<br>
-        Q use medkit<br>
-        1-5 switch slot
+    <div style="margin-top:40px; display:flex; gap:16px; align-items:center;">
+        <span style="font-size:13px; opacity:0.6;">Name:</span>
+        <input id="nameInput" type="text" maxlength="16" value="Player" style="width:130px; padding:6px 10px; border-radius:8px; border:1px solid #334; background:#0f172a; color:white;">
+        <span style="font-size:13px; opacity:0.6;">Color:</span>
+        <input id="colorInput" type="color" value="#38bdf8" style="width:36px; height:36px; border-radius:8px; border:none; cursor:pointer;">
     </div>
 </div>
 
-<div id="leaderboardPanel">
-    <strong>Leaderboard</strong>
-    <div id="leaderboard" style="margin-top:8px;"></div>
+<!-- MULTIPLAYER MENU -->
+<div id="multiMenu" style="
+    position:fixed; inset:0; z-index:100; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, #0d1f3c 0%, #060d18 100%);
+">
+    <div style="font-size:28px; font-weight:800; margin-bottom:6px; color:#60a5fa;">MULTIPLAYER</div>
+    <div style="font-size:13px; opacity:0.5; margin-bottom:30px;">Join or create a server</div>
+
+    <div style="display:flex; gap:12px; margin-bottom:24px;">
+        <button onclick="joinAny()" style="padding:12px 22px; border-radius:10px; background:#1d4ed8; font-size:15px;">🎲 Find Random Server</button>
+        <button onclick="showCreateRoom()" style="padding:12px 22px; border-radius:10px; background:#7c3aed; font-size:15px;">＋ Create Server</button>
+    </div>
+
+    <div style="width:480px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
+        <div style="font-size:14px; opacity:0.6; margin-bottom:12px;">SERVER BROWSER</div>
+        <div id="roomList" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;"></div>
+        <button onclick="refreshRooms()" style="margin-top:12px; width:100%; padding:8px; border-radius:8px; background:#1e293b; font-size:13px;">↻ Refresh</button>
+    </div>
+
+    <button onclick="showMain()" style="margin-top:20px; padding:8px 20px; border-radius:8px; background:#374151; font-size:13px;">← Back</button>
 </div>
 
-<div id="hint"></div>
+<!-- CREATE ROOM PANEL -->
+<div id="createMenu" style="
+    position:fixed; inset:0; z-index:101; display:none;
+    flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.7);
+">
+    <div style="background:#0f172a; border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:28px; width:320px;">
+        <div style="font-size:20px; font-weight:700; margin-bottom:20px;">Create Server</div>
 
-<div id="inventory"></div>
+        <label style="font-size:13px; opacity:0.7;">Server Name</label>
+        <input id="roomNameInput" type="text" maxlength="32" placeholder="My Server" style="width:100%; box-sizing:border-box; margin:6px 0 14px; padding:8px 10px; border-radius:8px; border:1px solid #334; background:#1e293b; color:white;">
+
+        <label style="font-size:13px; opacity:0.7;">Password (leave blank for public)</label>
+        <input id="roomPasswordInput" type="text" maxlength="32" placeholder="optional" style="width:100%; box-sizing:border-box; margin:6px 0 20px; padding:8px 10px; border-radius:8px; border:1px solid #334; background:#1e293b; color:white;">
+
+        <div style="display:flex; gap:10px;">
+            <button onclick="submitCreateRoom()" style="flex:1; padding:10px; border-radius:8px; background:#7c3aed;">Create & Join</button>
+            <button onclick="hideCreateRoom()" style="flex:1; padding:10px; border-radius:8px; background:#374151;">Cancel</button>
+        </div>
+        <div id="createError" style="color:#f87171; font-size:13px; margin-top:10px; display:none;"></div>
+    </div>
+</div>
+
+<!-- GAME UI (hidden until in game) -->
+<div id="gameUI" style="display:none;">
+    <div id="uiPanel">
+        <button id="startRoundBtn">START ROUND</button><br>
+        Name: <span id="playerNameDisplay"></span><br>
+        Server: <span id="roomNameDisplay" style="opacity:0.6; font-size:12px;"></span>
+        <div id="roundInfo"></div>
+        <div id="playerInfo" style="margin-top:10px;"></div>
+        <div style="margin-top:10px; font-size:13px; opacity:0.92;">
+            W A S D move<br>
+            Shift sprint<br>
+            Hold left click to fire<br>
+            E open chest<br>
+            Q use medkit<br>
+            1-5 switch slot
+        </div>
+    </div>
+
+    <div id="leaderboardPanel">
+        <strong>Leaderboard</strong>
+        <div id="leaderboard" style="margin-top:8px;"></div>
+    </div>
+
+    <div id="hint"></div>
+    <div id="inventory"></div>
+</div>
 
 <canvas id="game"></canvas>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io();
+const socket = io({ autoConnect: false });
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
@@ -152,6 +216,93 @@ const roundInfoEl = document.getElementById('roundInfo');
 const playerInfoEl = document.getElementById('playerInfo');
 const hintEl = document.getElementById('hint');
 const startRoundBtn = document.getElementById('startRoundBtn');
+
+// Menu functions
+function showMain() {
+    document.getElementById('mainMenu').style.display = 'flex';
+    document.getElementById('multiMenu').style.display = 'none';
+    document.getElementById('createMenu').style.display = 'none';
+}
+
+function showMultiplayer() {
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('multiMenu').style.display = 'flex';
+    refreshRooms();
+}
+
+function showCreateRoom() {
+    document.getElementById('createMenu').style.display = 'flex';
+}
+
+function hideCreateRoom() {
+    document.getElementById('createMenu').style.display = 'none';
+    document.getElementById('createError').style.display = 'none';
+}
+
+function showSingleplayer() {
+    enterGame();
+    socket.emit('joinAny');
+}
+
+function joinAny() {
+    enterGame();
+    socket.emit('joinAny');
+}
+
+function refreshRooms() {
+    socket.emit('getRooms');
+}
+
+function submitCreateRoom() {
+    const name = document.getElementById('roomNameInput').value.trim() || 'New Room';
+    const password = document.getElementById('roomPasswordInput').value;
+    enterGame();
+    socket.emit('createRoom', { name, password });
+}
+
+function enterGame() {
+    if (!socket.connected) socket.connect();
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('multiMenu').style.display = 'none';
+    document.getElementById('createMenu').style.display = 'none';
+    document.getElementById('gameUI').style.display = 'block';
+}
+
+socket.on('roomList', (list) => {
+    const el = document.getElementById('roomList');
+    if (list.length === 0) {
+        el.innerHTML = '<div style="opacity:0.4; font-size:13px; text-align:center; padding:16px;">No servers found. Create one!</div>';
+        return;
+    }
+    el.innerHTML = list.map(r => `
+        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); border-radius:10px; padding:10px 14px;">
+            <div>
+                <span style="font-weight:600;">${r.name}</span>
+                ${r.isPrivate ? ' 🔒' : ''}
+                <span style="font-size:12px; opacity:0.5; margin-left:8px;">${r.playerCount} player${r.playerCount !== 1 ? 's' : ''}</span>
+            </div>
+            <button onclick="joinRoom('${r.id}', ${r.isPrivate})" style="padding:6px 14px; border-radius:8px; background:#1d4ed8; font-size:13px;">Join</button>
+        </div>
+    `).join('');
+});
+
+function joinRoom(roomId, isPrivate) {
+    let password = '';
+    if (isPrivate) {
+        password = prompt('Enter server password:') || '';
+    }
+    enterGame();
+    socket.emit('joinRoom', { roomId, password });
+}
+
+socket.on('joinError', (msg) => {
+    const err = document.getElementById('createError');
+    err.textContent = msg;
+    err.style.display = 'block';
+    // Go back to multi menu if we tried to join
+    document.getElementById('gameUI').style.display = 'none';
+    document.getElementById('multiMenu').style.display = 'flex';
+});
 
 let players = {};
 let renderPlayers = {};
@@ -298,10 +449,12 @@ socket.on('connect', () => {
 });
 
 socket.on('init', (data) => {
-    buildings = data.buildings;
+    buildings = data.buildings || [];
     world = data.world;
-    roads = data.roads;
+    roads = data.roads || [];
     water = data.water || [];
+    document.getElementById('roomNameDisplay').textContent = data.roomName || '';
+    document.getElementById('playerNameDisplay').textContent = nameInput.value;
     generateNature();
 });
 
