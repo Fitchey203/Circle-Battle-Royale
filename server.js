@@ -116,7 +116,7 @@ function generateBuildings() {
 
 let attempts = 0;
 
-while (buildings.length < 20 && attempts < 200) {
+while (buildings.length < 35 && attempts < 500) {
     attempts++;
 
     const w = rand(260, 380);
@@ -125,16 +125,16 @@ while (buildings.length < 20 && attempts < 200) {
     const x = rand(100, WORLD.width - w - 100);
     const y = rand(100, WORLD.height - h - 100);
 
-    if (!nearRoad(x + w / 2, y + h / 2)) continue;
+    if (!nearRoad(x + w / 2, y + h / 2, 300)) continue;
 
     let overlap = false;
 
     // check buildings
     for (const b of buildings) {
-        if (rectsOverlap({ x, y, w, h }, b)) {
-            overlap = true;
-            break;
-        }
+    if (rectsOverlap({ x: x - 80, y: y - 80, w: w + 160, h: h + 160 }, b)) {
+        overlap = true;
+        break;
+       }
     }
 
     // check roads
@@ -150,7 +150,7 @@ while (buildings.length < 20 && attempts < 200) {
  const doorSide = ['top','bottom','left','right'][Math.floor(Math.random()*4)];
 const doorSize = rand(60, 90);
 const isVerticalWall = doorSide === 'left' || doorSide === 'right';
-const maxOffset = isVerticalWall ? h - doorSize - 10 : w - doorSize - 10;
+const maxOffset = isVerticalWall ? h - doorSize - 40 : w - doorSize - 40;
 
 buildings.push({
     id: buildings.length + 1,
@@ -162,7 +162,7 @@ buildings.push({
     door: {
         side: doorSide,
         size: doorSize,
-        offset: clamp(rand(10, maxOffset), 10, maxOffset),
+        offset: clamp(rand(40, maxOffset), 40, maxOffset),
         open: false,
         progress: 0
     }
@@ -432,9 +432,9 @@ function spawnWindows() {
             let offset = b.w / 2;
 
             // 🔥 if too close to door, shift window
-            if (Math.abs(doorCenter - offset) < 80) {
-                offset = 40; // push to left side
-            }
+            if (Math.abs(doorCenter - offset) < 120) {
+    		offset = b.w - 120; // push to opposite side
+		}
 
             if (b.door.side === 'bottom') {
                 windows.push({
@@ -461,9 +461,9 @@ function spawnWindows() {
                 let yOffset = b.h / 2;
 
                 // shift if conflict vertically
-                if (Math.abs(doorCenter - yOffset) < 80) {
-                    yOffset = 40;
-                }
+                if (Math.abs(doorCenter - yOffset) < 120) {
+   		 yOffset = b.h - 120;
+		}
 
                 windows.push({
                     id: `window_${b.id}`,
@@ -478,9 +478,9 @@ function spawnWindows() {
 
                 let yOffset = b.h / 2;
 
-                if (Math.abs(doorCenter - yOffset) < 80) {
-                    yOffset = 40;
-                }
+                if (Math.abs(doorCenter - yOffset) < 120) {
+   		 yOffset = b.h - 120;
+		}
 
                 windows.push({
                     id: `window_${b.id}`,
@@ -591,10 +591,12 @@ function updateDoors() {
 io.on('connection', (socket) => {
     createPlayer(socket.id);
 
-    socket.emit('init', {
-        world: WORLD,
-        weapons: Object.keys(WEAPONS),
-    });
+socket.emit('init', {
+    world: WORLD,
+    weapons: Object.keys(WEAPONS),
+    buildings,
+    roads,
+});
 
     socket.on('updateProfile', (data) => {
         const p = players[socket.id];
@@ -634,7 +636,7 @@ io.on('connection', (socket) => {
             p.stamina = Math.max(0, p.stamina - 1.1);
             p.lastSprintTime = Date.now();
         } else {
-        	if (Date.now () - p.lastSprintTime > 3000) {
+        	if (Date.now() - p.lastSprintTime > 3000) {
           	  p.stamina = Math.min(100, p.stamina + 0.35);
 	    }
         }
@@ -846,10 +848,10 @@ if (blocked) return false;
             const p = players[id];
             if (!p.alive) continue;
 
-            if (dist(b.x, b.y, p.x, p.y) <= PLAYER_RADIUS) {
-                const d = dist(b.x, b.y, p.x, p.y);
-		const falloff = Math.max(0.4, 1 - d / 600);
-		p.health -= b.damage * falloff;
+            const d = dist(b.x, b.y, p.x, p.y);
+	    if (d <= PLAYER_RADIUS) {
+    		const falloff = Math.max(0.4, 1 - d / 600);
+  	 	 p.health -= b.damage * falloff;
 
                 if (p.health <= 0) {
                     p.health = 0;
