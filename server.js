@@ -8,6 +8,10 @@ app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
 
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // asdf
 
 const WORLD = { width: 3200, height: 2200 };
