@@ -66,10 +66,33 @@ let roads = [];
 let furniture = [];
 let windows = [];
 let glass = [];
+let water = []; 
 let roundActive = false;
 let roundEndsAt = 0;
 
 let buildings = [];
+
+function generateWater() {
+    water = [];
+
+    // A few ponds (ellipse-like blobs stored as rects with a radius)
+    for (let i = 0; i < 4; i++) {
+        const cx = rand(300, WORLD.width - 300);
+        const cy = rand(300, WORLD.height - 300);
+        const rx = rand(80, 160);
+        const ry = rand(60, 120);
+        water.push({ type: 'pond', cx, cy, rx, ry });
+    }
+
+    // A couple of rivers (long thin rects)
+    water.push({
+        type: 'river',
+        x: rand(200, WORLD.width / 2 - 100),
+        y: 0,
+        w: rand(50, 90),
+        h: WORLD.height
+    });
+}
 
 function generateRoads() {
     roads = [];
@@ -423,73 +446,37 @@ function spawnWindows() {
 
     buildings.forEach(b => {
         if (Math.random() < 0.7) {
-
             const wallSize = WALL_THICKNESS;
+            const d = b.door;
 
-            const doorCenter = b.door.offset + b.door.size / 2;
+            // Build a "danger zone" around the door that the window must not touch
+            let doorRect;
+            if (d.side === 'top')    doorRect = { x: b.x + d.offset - 20, y: b.y,                          w: d.size + 40, h: wallSize };
+            if (d.side === 'bottom') doorRect = { x: b.x + d.offset - 20, y: b.y + b.h - wallSize,         w: d.size + 40, h: wallSize };
+            if (d.side === 'left')   doorRect = { x: b.x,                  y: b.y + d.offset - 20,          w: wallSize, h: d.size + 40 };
+            if (d.side === 'right')  doorRect = { x: b.x + b.w - wallSize, y: b.y + d.offset - 20,          w: wallSize, h: d.size + 40 };
 
-            // default center position
-            let offset = b.w / 2;
+            // Try up to 10 positions for the window
+            for (let attempt = 0; attempt < 10; attempt++) {
+                let win;
 
-            // 🔥 if too close to door, shift window
-            if (Math.abs(doorCenter - offset) < 120) {
-    		offset = b.w - 120; // push to opposite side
-		}
+                if (d.side === 'top' || d.side === 'bottom') {
+                    const maxX = b.w - 80 - 20;
+                    const wx = b.x + 20 + Math.random() * maxX;
+                    const wy = d.side === 'top' ? b.y : b.y + b.h - wallSize;
+                    win = { id: `window_${b.id}`, x: wx, y: wy, w: 80, h: wallSize, broken: false };
+                } else {
+                    const maxY = b.h - 80 - 20;
+                    const wy = b.y + 20 + Math.random() * maxY;
+                    const wx = d.side === 'left' ? b.x : b.x + b.w - wallSize;
+                    win = { id: `window_${b.id}`, x: wx, y: wy, w: wallSize, h: 80, broken: false };
+                }
 
-            if (b.door.side === 'bottom') {
-                windows.push({
-                    id: `window_${b.id}`,
-                    x: b.x + offset - 40,
-                    y: b.y + b.h - wallSize,
-                    w: 80,
-                    h: wallSize,
-                    broken: false
-                });
-            } 
-            else if (b.door.side === 'top') {
-                windows.push({
-                    id: `window_${b.id}`,
-                    x: b.x + offset - 40,
-                    y: b.y,
-                    w: 80,
-                    h: wallSize,
-                    broken: false
-                });
-            }
-            else if (b.door.side === 'left') {
-
-                let yOffset = b.h / 2;
-
-                // shift if conflict vertically
-                if (Math.abs(doorCenter - yOffset) < 120) {
-   		 yOffset = b.h - 120;
-		}
-
-                windows.push({
-                    id: `window_${b.id}`,
-                    x: b.x,
-                    y: b.y + yOffset - 40,
-                    w: wallSize,
-                    h: 80,
-                    broken: false
-                });
-            }
-            else if (b.door.side === 'right') {
-
-                let yOffset = b.h / 2;
-
-                if (Math.abs(doorCenter - yOffset) < 120) {
-   		 yOffset = b.h - 120;
-		}
-
-                windows.push({
-                    id: `window_${b.id}`,
-                    x: b.x + b.w - wallSize,
-                    y: b.y + yOffset - 40,
-                    w: wallSize,
-                    h: 80,
-                    broken: false
-                });
+                // Only place the window if it doesn't overlap the door zone
+                if (!rectsOverlap(win, doorRect)) {
+                    windows.push(win);
+                    break;
+                }
             }
         }
     });
@@ -523,8 +510,9 @@ function startRound() {
     bullets = [];
     glass = [];
 
-    generateRoads();     // FIRST
-    generateBuildings(); // THEN buildings
+	generateRoads();
+	generateWater();
+	generateBuildings();
 
     spawnFurniture();
     spawnChests();
@@ -596,6 +584,7 @@ socket.emit('init', {
     weapons: Object.keys(WEAPONS),
     buildings,
     roads,
+    water, 
 });
 
     socket.on('updateProfile', (data) => {
@@ -630,8 +619,19 @@ socket.emit('init', {
         dx /= length;
         dy /= length;
 
-        let speed = 4.25;
-        if (roundActive && sprint && p.stamina > 0) {
+       let inWater = false;
+for (const w of water) {
+    if (w.type === 'pond') {
+        const dx = (p.x - w.cx) / w.rx;
+        const dy = (p.y - w.cy) / w.ry;
+        if (dx * dx + dy * dy < 1) { inWater = true; break; }
+    } else {
+        if (p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h) { inWater = true; break; }
+    }
+}
+
+let speed = inWater ? 2.5 : 4.25;
+if (roundActive && sprint && p.stamina > 0) {
             speed = 6.4;
             p.stamina = Math.max(0, p.stamina - 1.1);
             p.lastSprintTime = Date.now();
@@ -907,6 +907,7 @@ f.vy *= 0.85;
         players,
         bullets,
         chests,
+	water, 
 	furniture,
 	windows,
 	glass,
