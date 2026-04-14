@@ -7,7 +7,7 @@ app.use(express.static(__dirname));
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
-
+ 
 const WORLD = { width: 3200, height: 2200 };
 const TICK_RATE = 1000 / 60;
 const PLAYER_RADIUS = 16;
