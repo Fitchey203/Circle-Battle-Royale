@@ -75,23 +75,53 @@ let buildings = [];
 function generateWater() {
     water = [];
 
-    // A few ponds (ellipse-like blobs stored as rects with a radius)
-    for (let i = 0; i < 4; i++) {
+    // Helper: does this ellipse-pond overlap a road or building?
+    function pondClear(cx, cy, rx, ry) {
+        const rect = { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 };
+        for (const r of roads) {
+            if (rectsOverlap(rect, r)) return false;
+        }
+        for (const b of buildings) {
+            if (rectsOverlap(rect, b)) return false;
+        }
+        return true;
+    }
+
+    // Helper: does this river rect overlap a road or building?
+    function riverClear(x, y, w, h) {
+        const rect = { x, y, w, h };
+        for (const r of roads) {
+            if (rectsOverlap(rect, r)) return false;
+        }
+        for (const b of buildings) {
+            if (rectsOverlap(rect, b)) return false;
+        }
+        return true;
+    }
+
+    // Ponds
+    let attempts = 0;
+    while (water.filter(w => w.type === 'pond').length < 4 && attempts < 100) {
+        attempts++;
         const cx = rand(300, WORLD.width - 300);
         const cy = rand(300, WORLD.height - 300);
         const rx = rand(80, 160);
         const ry = rand(60, 120);
-        water.push({ type: 'pond', cx, cy, rx, ry });
+        if (pondClear(cx, cy, rx, ry)) {
+            water.push({ type: 'pond', cx, cy, rx, ry });
+        }
     }
 
-    // A couple of rivers (long thin rects)
-    water.push({
-        type: 'river',
-        x: rand(200, WORLD.width / 2 - 100),
-        y: 0,
-        w: rand(50, 90),
-        h: WORLD.height
-    });
+    // Rivers — tries a few positions to avoid roads/buildings
+    attempts = 0;
+    while (water.filter(w => w.type === 'river').length < 1 && attempts < 50) {
+        attempts++;
+        const x = rand(200, WORLD.width - 300);
+        const w = rand(50, 90);
+        if (riverClear(x, 0, w, WORLD.height)) {
+            water.push({ type: 'river', x, y: 0, w, h: WORLD.height });
+        }
+    }
 }
 
 function generateRoads() {
@@ -511,8 +541,8 @@ function startRound() {
     glass = [];
 
 	generateRoads();
-	generateWater();
 	generateBuildings();
+	generateWater();
 
     spawnFurniture();
     spawnChests();
@@ -619,18 +649,24 @@ socket.emit('init', {
         dx /= length;
         dy /= length;
 
-       let inWater = false;
+let inWater = false;
+let inBush = false;
+
 for (const w of water) {
     if (w.type === 'pond') {
-        const dx = (p.x - w.cx) / w.rx;
-        const dy = (p.y - w.cy) / w.ry;
-        if (dx * dx + dy * dy < 1) { inWater = true; break; }
+        const ddx = (p.x - w.cx) / w.rx;
+        const ddy = (p.y - w.cy) / w.ry;
+        if (ddx * ddx + ddy * ddy < 1) { inWater = true; break; }
     } else {
         if (p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h) { inWater = true; break; }
     }
 }
 
+// hidden if in water, or server will trust client bush data via state
+p.inWater = inWater;
+
 let speed = inWater ? 2.5 : 4.25;
+
 if (roundActive && sprint && p.stamina > 0) {
             speed = 6.4;
             p.stamina = Math.max(0, p.stamina - 1.1);
