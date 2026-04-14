@@ -197,16 +197,37 @@ function generateNature() {
 
     let attempts = 0;
 
-    while (bushes.length < 120 && attempts < 300) {
+    while (bushes.length < 140 && attempts < 600) {
         attempts++;
 
         const x = Math.random() * world.width;
         const y = Math.random() * world.height;
 
-        // 🚫 skip roads
         if (isOnRoad(x, y)) continue;
 
-        bushes.push({ x, y });
+        // Skip if on water
+        let onWater = false;
+        for (const w of water) {
+            if (w.type === 'pond') {
+                const ddx = (x - w.cx) / w.rx;
+                const ddy = (y - w.cy) / w.ry;
+                if (ddx * ddx + ddy * ddy < 1) { onWater = true; break; }
+            } else {
+                if (x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h) { onWater = true; break; }
+            }
+        }
+        if (onWater) continue;
+
+        // Vary size: small (10-16), medium (20-30), large (35-50)
+        const roll = Math.random();
+        const radius = roll < 0.5 ? 10 + Math.random() * 6
+                     : roll < 0.8 ? 20 + Math.random() * 10
+                     : 35 + Math.random() * 15;
+
+        // Large bushes hide players
+        const hides = radius >= 35;
+
+        bushes.push({ x, y, radius, hides });
     }
 }
 
@@ -220,6 +241,26 @@ function generateGrass() {
             color: Math.random() > 0.5 ? "#1f6d3b" : "#166534"
         });
     }
+}
+
+function isPlayerHidden(px, py) {
+    // hidden in large bush?
+    for (const b of bushes) {
+        if (!b.hides) continue;
+        const d = Math.hypot(px - b.x, py - b.y);
+        if (d < b.radius * 0.8) return true;
+    }
+    // hidden in water?
+    for (const w of water) {
+        if (w.type === 'pond') {
+            const ddx = (px - w.cx) / w.rx;
+            const ddy = (py - w.cy) / w.ry;
+            if (ddx * ddx + ddy * ddy < 1) return true;
+        } else {
+            if (px > w.x && px < w.x + w.w && py > w.y && py < w.y + w.h) return true;
+        }
+    }
+    return false;
 }
 
 function resize() {
@@ -502,25 +543,29 @@ function drawWater() {
 
 function drawNature() {
     bushes.forEach(b => {
-        ctx.shadowColor = 'rgba(0,80,0,0.3)';
-        ctx.shadowBlur = 8;
+        const r = b.radius || 18;
 
-        ctx.fillStyle = "#166534";
+        ctx.shadowColor = 'rgba(0,80,0,0.3)';
+        ctx.shadowBlur = r < 20 ? 4 : 10;
+
+        // Large hiding bushes are slightly darker/denser looking
+        ctx.fillStyle = b.hides ? "#0f4a24" : "#166534";
         ctx.beginPath();
-        ctx.arc(b.x, b.y, 18, 0, Math.PI * 2);
+        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.shadowBlur = 0;
         ctx.shadowColor = 'transparent';
 
+        // Highlight blobs scale with size
         ctx.fillStyle = "#22c55e";
         ctx.beginPath();
-        ctx.arc(b.x - 5, b.y - 6, 7, 0, Math.PI * 2);
+        ctx.arc(b.x - r * 0.28, b.y - r * 0.33, r * 0.38, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = "#16a34a";
         ctx.beginPath();
-        ctx.arc(b.x + 5, b.y - 2, 5, 0, Math.PI * 2);
+        ctx.arc(b.x + r * 0.28, b.y - r * 0.11, r * 0.28, 0, Math.PI * 2);
         ctx.fill();
     });
 }
@@ -718,6 +763,15 @@ function drawPlayers() {
         const rx = renderPlayers[id].x;
         const ry = renderPlayers[id].y;
 
+        const hidden = isPlayerHidden(p.x, p.y);
+        const isMe = id === myId;
+
+        // Other players in hiding are invisible to you. You always see yourself, but faded.
+        if (hidden && !isMe) continue;
+
+        const alpha = hidden && isMe ? 0.35 : 1.0;
+        ctx.globalAlpha = alpha;
+
         // Soft glow
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 12;
@@ -756,7 +810,7 @@ function drawPlayers() {
         ctx.stroke();
         ctx.lineCap = 'butt';
 
-        // Health bar (rounded)
+        // Health bar
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.beginPath();
         ctx.roundRect(rx - 20, ry - 30, 40, 5, 3);
@@ -772,6 +826,8 @@ function drawPlayers() {
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(p.name, rx, ry - 36);
+
+        ctx.globalAlpha = 1.0;
     }
 }
 
@@ -807,16 +863,25 @@ function drawMinimap() {
     });
 
     for (let id in players) {
-        const p = players[id];
-        if (!p.alive) continue;
-        ctx.fillStyle = id === myId ? 'lime' : 'red';
-        ctx.fillRect(
-            x + (p.x / world.width) * size - 2,
-            y + (p.y / world.height) * size - 2,
-            4,
-            4
-        );
-    }
+    const p = players[id];
+    if (!p.alive) continue;
+
+    const hidden = isPlayerHidden(p.x, p.y);
+    const isMe = id === myId;
+
+    if (hidden && !isMe) continue; // hidden enemies don't show on map
+
+    ctx.globalAlpha = hidden && isMe ? 0.35 : 1.0;
+    ctx.fillStyle = isMe ? 'lime' : 'red';
+    ctx.fillRect(
+        x + (p.x / world.width) * size - 2,
+        y + (p.y / world.height) * size - 2,
+        4,
+        4
+    );
+    ctx.globalAlpha = 1.0;
+}
+
 }
 
 function draw() {
