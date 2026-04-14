@@ -163,6 +163,7 @@ let windows = [];
 let buildings = [];
 let leaderboard = [];
 let glass = [];
+let water = []; 
 let grassDots = [];
 let bushes = [];
 let myId = null;
@@ -259,8 +260,8 @@ socket.on('init', (data) => {
     buildings = data.buildings;
     world = data.world;
     roads = data.roads;
-    generateNature(); // ✅ NOW roads exist
-
+    water = data.water || [];
+    generateNature();
 });
 
 socket.on('state', (data) => {
@@ -283,6 +284,7 @@ for (let id in renderPlayers) {
     furniture = data.furniture || [];
     windows = data.windows || [];
     glass = data.glass || [];
+    water = data.water || [];
     buildings = data.buildings;
     roads = data.roads || [];
     leaderboard = data.leaderboard;
@@ -358,6 +360,8 @@ setInterval(() => {
     if (keys['a']) dx -= 1;
     if (keys['d']) dx += 1;
 
+    if (dx === 0 && dy === 0) return;
+
     socket.emit('move', {
         dx,
         dy,
@@ -367,7 +371,7 @@ setInterval(() => {
 
 canvas.addEventListener('mousemove', (e) => {
     const me = players[myId];
-    if (!me) return;
+    if (!me || !me.alive || !roundActive) return;
 
     const playerScreenX = me.x - camX;
     const playerScreenY = me.y - camY;
@@ -450,16 +454,73 @@ function drawBackground() {
     }
 }
 
+function drawWater() {
+    water.forEach(w => {
+        ctx.save();
+
+        if (w.type === 'pond') {
+            // Draw an ellipse
+            ctx.beginPath();
+            ctx.ellipse(w.cx, w.cy, w.rx, w.ry, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(30, 100, 180, 0.45)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(80, 160, 220, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Subtle shimmer lines
+            ctx.strokeStyle = 'rgba(180, 220, 255, 0.18)';
+            ctx.lineWidth = 2;
+            for (let i = -1; i <= 1; i++) {
+                ctx.beginPath();
+                ctx.moveTo(w.cx - w.rx * 0.6, w.cy + i * 18);
+                ctx.lineTo(w.cx + w.rx * 0.6, w.cy + i * 18);
+                ctx.stroke();
+            }
+        } else {
+            // River
+            ctx.fillStyle = 'rgba(30, 100, 180, 0.45)';
+            ctx.fillRect(w.x, w.y, w.w, w.h);
+            ctx.strokeStyle = 'rgba(80, 160, 220, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(w.x, w.y, w.w, w.h);
+
+            // Flow lines
+            ctx.strokeStyle = 'rgba(180, 220, 255, 0.18)';
+            ctx.lineWidth = 2;
+            for (let i = w.y; i < w.y + w.h; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(w.x + 8, i);
+                ctx.lineTo(w.x + w.w - 8, i);
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
+    });
+}
+
 function drawNature() {
     bushes.forEach(b => {
-        ctx.fillStyle = "#14532d";
+        ctx.shadowColor = 'rgba(0,80,0,0.3)';
+        ctx.shadowBlur = 8;
+
+        ctx.fillStyle = "#166534";
         ctx.beginPath();
         ctx.arc(b.x, b.y, 18, 0, Math.PI * 2);
         ctx.fill();
 
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+
         ctx.fillStyle = "#22c55e";
         ctx.beginPath();
-        ctx.arc(b.x - 5, b.y - 5, 6, 0, Math.PI * 2);
+        ctx.arc(b.x - 5, b.y - 6, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#16a34a";
+        ctx.beginPath();
+        ctx.arc(b.x + 5, b.y - 2, 5, 0, Math.PI * 2);
         ctx.fill();
     });
 }
@@ -531,33 +592,44 @@ function drawDoor(building) {
 
 function drawBuildings() {
     buildings.forEach((b) => {
-    const colors = getThemeColors(b.theme);
+        const colors = getThemeColors(b.theme);
+        const r = 6; // corner radius
 
-// fake shadow
-ctx.fillStyle = "rgba(0,0,0,0.2)";
-ctx.fillRect(b.x + 8, b.y + 8, b.w, b.h);
+        // Shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetX = 6;
+        ctx.shadowOffsetY = 6;
 
- // 🛣️ sidewalk (outer)
-ctx.fillStyle = "#9ca3af";
-ctx.fillRect(b.x - 14, b.y - 14, b.w + 28, b.h + 28);
+        // Sidewalk with rounded corners
+        ctx.fillStyle = "#9ca3af";
+        ctx.beginPath();
+        ctx.roundRect(b.x - 14, b.y - 14, b.w + 28, b.h + 28, r + 4);
+        ctx.fill();
 
-// sidewalk border (gives it definition)
-ctx.strokeStyle = "#4b5563";
-ctx.lineWidth = 2;
-ctx.strokeRect(b.x - 14, b.y - 14, b.w + 28, b.h + 28);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
 
-// building shell
-ctx.fillStyle = colors.outer;
-ctx.fillRect(b.x, b.y, b.w, b.h);
+        // Building shell
+        ctx.fillStyle = colors.outer;
+        ctx.beginPath();
+        ctx.roundRect(b.x, b.y, b.w, b.h, r);
+        ctx.fill();
 
-// interior
-ctx.fillStyle = colors.inner;
-ctx.fillRect(b.x + 14, b.y + 14, b.w - 28, b.h - 28);
+        // Interior floor
+        ctx.fillStyle = colors.inner;
+        ctx.beginPath();
+        ctx.roundRect(b.x + 14, b.y + 14, b.w - 28, b.h - 28, r - 2);
+        ctx.fill();
 
-// building outline
-ctx.strokeStyle = colors.trim;
-ctx.lineWidth = 8;
-ctx.strokeRect(b.x, b.y, b.w, b.h);
+        // Outline
+        ctx.strokeStyle = colors.trim;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.roundRect(b.x, b.y, b.w, b.h, r);
+        ctx.stroke();
 
         drawDoor(b);
     });
@@ -646,16 +718,25 @@ function drawPlayers() {
         const rx = renderPlayers[id].x;
         const ry = renderPlayers[id].y;
 
+        // Soft glow
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 12;
+
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(rx, ry, 16, 0, Math.PI * 2);
         ctx.fill();
 
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+
+        // Eye
         ctx.fillStyle = "white";
         ctx.beginPath();
         ctx.arc(rx + 6, ry - 4, 3, 0, Math.PI * 2);
         ctx.fill();
 
+        // Weapon line
         const weapon = p.inventory[p.selectedSlot];
         ctx.strokeStyle = {
             Pistol: "#ffffff",
@@ -664,7 +745,8 @@ function drawPlayers() {
             SMG: "#34d399",
             Sniper: "#f87171"
         }[weapon] || "#ffffff";
-
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(rx, ry);
         ctx.lineTo(
@@ -672,16 +754,24 @@ function drawPlayers() {
             ry + Math.sin(p.weaponAngle) * 25
         );
         ctx.stroke();
+        ctx.lineCap = 'butt';
 
-        ctx.fillStyle = 'red';
-        ctx.fillRect(rx - 20, ry - 28, 40, 5);
-        ctx.fillStyle = 'lime';
-        ctx.fillRect(rx - 20, ry - 28, (p.health / 100) * 40, 5);
+        // Health bar (rounded)
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.roundRect(rx - 20, ry - 30, 40, 5, 3);
+        ctx.fill();
 
+        ctx.fillStyle = p.health > 50 ? '#22c55e' : p.health > 25 ? '#f59e0b' : '#ef4444';
+        ctx.beginPath();
+        ctx.roundRect(rx - 20, ry - 30, (p.health / 100) * 40, 5, 3);
+        ctx.fill();
+
+        // Name
         ctx.fillStyle = 'white';
-        ctx.font = '12px Arial';
+        ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(p.name, rx, ry - 35);
+        ctx.fillText(p.name, rx, ry - 36);
     }
 }
 
@@ -738,6 +828,7 @@ function draw() {
 
     drawBackground();
     drawRoads();
+    drawWater();
     drawNature();
     drawBuildings();
     drawWindows();
