@@ -102,6 +102,7 @@ button {
 }
 </style>
 </head>
+<body>
 <!-- MAIN MENU -->
 <div id="mainMenu" style="
     position:fixed; inset:0; z-index:100;
@@ -305,14 +306,14 @@ function joinRoom(roomId, isPrivate) {
         password = prompt('Enter server password:') || '';
     }
     enterGame(() => {
-    socket.emit('joinAny');
-});
+        socket.emit('joinRoom', { roomId, password });
+    });
+}
 
 socket.on('joinError', (msg) => {
     const err = document.getElementById('createError');
     err.textContent = msg;
     err.style.display = 'block';
-    // Go back to multi menu if we tried to join
     document.getElementById('gameUI').style.display = 'none';
     document.getElementById('multiMenu').style.display = 'flex';
 });
