@@ -201,7 +201,7 @@ button {
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io({ autoConnect: false });
+const socket = io(window.location.origin, { autoConnect: false });
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
@@ -240,14 +240,14 @@ function hideCreateRoom() {
 }
 
 function showSingleplayer() {
-    enterGame();
+    enterGame(() => {
     socket.emit('joinAny');
-}
+});
 
 function joinAny() {
-    enterGame();
+    enterGame(() => {
     socket.emit('joinAny');
-}
+});
 
 function refreshRooms() {
     socket.emit('getRooms');
@@ -256,12 +256,21 @@ function refreshRooms() {
 function submitCreateRoom() {
     const name = document.getElementById('roomNameInput').value.trim() || 'New Room';
     const password = document.getElementById('roomPasswordInput').value;
-    enterGame();
-    socket.emit('createRoom', { name, password });
-}
+    enterGame(() => {
+    socket.emit('joinAny');
+});
 
-function enterGame() {
-    if (!socket.connected) socket.connect();
+function enterGame(callback) {
+    if (!socket.connected) {
+        socket.connect();
+
+        socket.once('connect', () => {
+            if (callback) callback();
+        });
+    } else {
+        if (callback) callback();
+    }
+
     document.getElementById('mainMenu').style.display = 'none';
     document.getElementById('multiMenu').style.display = 'none';
     document.getElementById('createMenu').style.display = 'none';
@@ -291,9 +300,9 @@ function joinRoom(roomId, isPrivate) {
     if (isPrivate) {
         password = prompt('Enter server password:') || '';
     }
-    enterGame();
-    socket.emit('joinRoom', { roomId, password });
-}
+    enterGame(() => {
+    socket.emit('joinAny');
+});
 
 socket.on('joinError', (msg) => {
     const err = document.getElementById('createError');
