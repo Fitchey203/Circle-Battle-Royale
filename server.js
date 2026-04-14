@@ -3,7 +3,10 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
-app.use(express.static(__dirname + '/public'));
+app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
 
 const WORLD = { width: 3200, height: 2200 };
 const TICK_RATE = 1000 / 60;
@@ -486,7 +489,7 @@ function spawnFurniture(room) {
 
             // chairs
             for (let i = 0; i < 2; i++) {
-                furniture.push({
+                room.furniture.push({
                     id: `chair_${Math.random()}`,
                     x: b.x + rand(40, b.w - 60),
                     y: b.y + rand(40, b.h - 60),
