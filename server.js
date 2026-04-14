@@ -59,21 +59,48 @@ const WEAPONS = {
 
 const LOOT_GUNS = ['AR', 'Shotgun', 'SMG', 'Sniper'];
 
-let players = {};
-let bullets = [];
-let chests = [];
-let roads = [];
-let furniture = [];
-let windows = [];
-let glass = [];
-let water = []; 
-let roundActive = false;
-let roundEndsAt = 0;
+// Each room has its own full game state
+const rooms = {};
 
-let buildings = [];
+function createRoom(name, isPrivate = false, password = '') {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    rooms[id] = {
+        id,
+        name,
+        isPrivate,
+        password,
+        players: {},
+        bullets: [],
+        chests: [],
+        roads: [],
+        furniture: [],
+        windows: [],
+        glass: [],
+        water: [],
+        buildings: [],
+        roundActive: false,
+        roundEndsAt: 0,
+    };
+    return rooms[id];
+}
 
-function generateWater() {
-    water = [];
+// Default public room so there's always one to join
+createRoom('Public Lobby', false);
+
+function getPublicRooms() {
+    return Object.values(rooms).map(r => ({
+        id: r.id,
+        name: r.name,
+        isPrivate: r.isPrivate,
+        playerCount: Object.keys(r.players).length,
+        roundActive: r.roundActive,
+    }));
+}
+
+function generateWater(room) {
+    room.water = [];
+    const { roads, buildings } = room;
+    const water = room.water;
 
     // Helper: does this ellipse-pond overlap a road or building?
     function pondClear(cx, cy, rx, ry) {
@@ -124,8 +151,9 @@ function generateWater() {
     }
 }
 
-function generateRoads() {
-    roads = [];
+function generateRoads(room) {
+    room.roads = [];
+    const roads = room.roads;
 
     const ROAD_WIDTH = 140;
 
@@ -150,7 +178,7 @@ function generateRoads() {
     });
 }
 
-function nearRoad(x, y, buffer = 180) {
+function nearRoad(roads, x, y, buffer = 180) {
     for (const r of roads) {
         if (
             x > r.x - buffer &&
@@ -164,8 +192,10 @@ function nearRoad(x, y, buffer = 180) {
     return false;
 }
 
-function generateBuildings() {
-    buildings = [];
+function generateBuildings(room) {
+    room.buildings = [];
+    const { roads } = room;
+    const buildings = room.buildings;
 
 let attempts = 0;
 
@@ -178,7 +208,7 @@ while (buildings.length < 35 && attempts < 500) {
     const x = rand(100, WORLD.width - w - 100);
     const y = rand(100, WORLD.height - h - 100);
 
-    if (!nearRoad(x + w / 2, y + h / 2, 300)) continue;
+    if (!nearRoad(roads, x + w / 2, y + h / 2, 300)) continue;
 
     let overlap = false;
 
@@ -327,8 +357,8 @@ function getWallSegments(building) {
     return segments.filter((s) => s.w > 0 && s.h > 0);
 }
 
-function collidesWithBuildings(rect) {
-    for (const building of buildings) {
+function collidesWithBuildings(room, rect) {
+    for (const building of room.buildings) {
         const segments = getWallSegments(building);
         for (const seg of segments) {
             if (rectsOverlap(rect, seg)) return true;
@@ -337,25 +367,25 @@ function collidesWithBuildings(rect) {
     return false;
 }
 
-function collidesWorld(rect) {
+function collidesWorld(room, rect) {
     if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > WORLD.width || rect.y + rect.h > WORLD.height) {
         return true;
     }
-    return collidesWithBuildings(rect);
+    return collidesWithBuildings(room, rect);
 }
 
-function getRandomSpawn() {
+function getRandomSpawn(room) {
     for (let i = 0; i < 200; i++) {
         const x = rand(80, WORLD.width - 80);
         const y = rand(80, WORLD.height - 80);
         const rect = getPlayerRect(x, y);
-        if (!collidesWorld(rect)) return { x, y };
+        if (!collidesWorld(room, rect)) return { x, y };
     }
     return { x: 120, y: 120 };
 }
 
-function resetPlayerForNewRound(p) {
-    const spawn = getRandomSpawn();
+function resetPlayerForNewRound(room, p) {
+    const spawn = getRandomSpawn(room);
     p.x = spawn.x;
     p.y = spawn.y;
     p.health = 100;
@@ -368,9 +398,9 @@ function resetPlayerForNewRound(p) {
     p.lastShotAt = 0;
 }
 
-function createPlayer(socketId) {
-    const spawn = getRandomSpawn();
-    players[socketId] = {
+function createPlayer(room, socketId) {
+    const spawn = getRandomSpawn(room);
+    room.players[socketId] = {
         id: socketId,
         x: spawn.x,
         y: spawn.y,
@@ -418,13 +448,13 @@ function findChestInBuilding(building) {
     };
 }
 
-function spawnChests() {
-    chests = [];
+function spawnChests(room) {
+    room.chests = [];
 
-    buildings.forEach((building, i) => {
+    room.buildings.forEach((building, i) => {
         if (Math.random() < 0.7) { // ✅ more chests
             const pos = findChestInBuilding(building);
-            chests.push({
+            room.chests.push({
                 id: `chest_${i}_${Date.now()}`,
                 x: pos.x,
                 y: pos.y,
@@ -436,14 +466,14 @@ function spawnChests() {
     });
 }
 
-function spawnFurniture() {
-    furniture = [];
+function spawnFurniture(room) {
+    room.furniture = [];
 
-    buildings.forEach(b => {
+    room.buildings.forEach(b => {
         if (Math.random() < 0.9) { // most buildings have stuff
 
             // table
-            furniture.push({
+            room.furniture.push({
                 id: `table_${Math.random()}`,
                 x: b.x + rand(40, b.w - 80),
                 y: b.y + rand(40, b.h - 80),
@@ -471,11 +501,11 @@ function spawnFurniture() {
     });
 }
 
-function spawnWindows() {
-    windows = [];
+function spawnWindows(room) {
+    room.windows = [];
 
-    buildings.forEach(b => {
-        if (Math.random() < 0.7) {
+    room.buildings.forEach(b => {
+	if (Math.random() < 0.7) {
             const wallSize = WALL_THICKNESS;
             const d = b.door;
 
@@ -504,7 +534,7 @@ function spawnWindows() {
 
                 // Only place the window if it doesn't overlap the door zone
                 if (!rectsOverlap(win, doorRect)) {
-                    windows.push(win);
+                    room.windows.push(win);
                     break;
                 }
             }
@@ -512,15 +542,15 @@ function spawnWindows() {
     });
 }
 
-function collidesFurniture(rect) {
-    for (const f of furniture) {
+function collidesFurniture(room, rect) {
+    for (const f of room.furniture) {
         if (rectsOverlap(rect, f)) return f;
     }
     return null;
 }
 
-function getLeaderboard() {
-    return Object.values(players)
+function getLeaderboard(room) {
+    return Object.values(room.players)
         .sort((a, b) => {
             if (b.kills !== a.kills) return b.kills - a.kills;
             return a.deaths - b.deaths;
@@ -533,33 +563,33 @@ function getLeaderboard() {
         }));
 }
 
-function startRound() {
-    roundActive = true;
-    roundEndsAt = Date.now() + ROUND_LENGTH_MS;
+function startRound(room) {
+    room.roundActive = true;
+    room.roundEndsAt = Date.now() + ROUND_LENGTH_MS;
 
-    bullets = [];
-    glass = [];
+    room.bullets = [];
+    room.glass = [];
 
-	generateRoads();
-	generateBuildings();
-	generateWater();
+    generateRoads(room);
+    generateBuildings(room);
+    generateWater(room);
 
-    spawnFurniture();
-    spawnChests();
-    spawnWindows();
+    spawnFurniture(room);
+    spawnChests(room);
+    spawnWindows(room);
 
-    for (const player of Object.values(players)) {
-        resetPlayerForNewRound(player);
+    for (const player of Object.values(room.players)) {
+        resetPlayerForNewRound(room, player);
     }
 }
 
-function endRound() {
-    roundActive = false;
-    roundEndsAt = 0;
-    bullets = [];
-    chests = [];
+function endRound(room) {
+    room.roundActive = false;
+    room.roundEndsAt = 0;
+    room.bullets = [];
+    room.chests = [];
 
-    for (const player of Object.values(players)) {
+    for (const player of Object.values(room.players)) {
         player.health = 100;
         player.alive = true;
         player.stamina = 100;
@@ -584,12 +614,12 @@ function tryGiveLoot(player, item) {
     return false;
 }
 
-function updateDoors() {
-    for (const building of buildings) {
+function updateDoors(room) {
+    for (const building of room.buildings) {
         const center = getDoorCenter(building);
         let shouldOpen = false;
 
-        for (const p of Object.values(players)) {
+        for (const p of Object.values(room.players)) {
             if (!p.alive) continue;
             if (dist(center.x, center.y, p.x, p.y) < 85) {
                 shouldOpen = true;
@@ -607,36 +637,66 @@ function updateDoors() {
 }
 
 io.on('connection', (socket) => {
-    createPlayer(socket.id);
+    let myRoom = null;
 
-socket.emit('init', {
-    world: WORLD,
-    weapons: Object.keys(WEAPONS),
-    buildings,
-    roads,
-    water, 
-});
+    socket.on('getRooms', () => {
+        socket.emit('roomList', getPublicRooms());
+    });
+
+    socket.on('createRoom', ({ name, password }) => {
+        const isPrivate = !!password;
+        const room = createRoom(name || 'New Room', isPrivate, password || '');
+        joinRoom(socket, room);
+    });
+
+    socket.on('joinRoom', ({ roomId, password }) => {
+        const room = rooms[roomId];
+        if (!room) return socket.emit('joinError', 'Room not found.');
+        if (room.isPrivate && room.password !== password) return socket.emit('joinError', 'Wrong password.');
+        joinRoom(socket, room);
+    });
+
+    socket.on('joinAny', () => {
+        // Find a public room with space, or create one
+        const available = Object.values(rooms).find(r => !r.isPrivate && Object.keys(r.players).length < 20);
+        const room = available || createRoom('Public Lobby', false);
+        joinRoom(socket, room);
+    });
+
+    function joinRoom(sock, room) {
+        myRoom = room;
+        sock.join(room.id);
+        createPlayer(room, sock.id);
+
+        sock.emit('init', {
+            world: WORLD,
+            weapons: Object.keys(WEAPONS),
+            buildings: room.buildings,
+            roads: room.roads,
+            water: room.water,
+            roomId: room.id,
+            roomName: room.name,
+        });
+    }
 
     socket.on('updateProfile', (data) => {
-        const p = players[socket.id];
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
         if (!p) return;
-
-        if (typeof data.name === 'string') {
-            p.name = data.name.trim().slice(0, 16) || 'Player';
-        }
-        if (typeof data.color === 'string') {
-            p.color = data.color;
-        }
+        if (typeof data.name === 'string') p.name = data.name.trim().slice(0, 16) || 'Player';
+        if (typeof data.color === 'string') p.color = data.color;
     });
 
     socket.on('startRound', () => {
-        if (!roundActive && Object.keys(players).length >= 1 && Object.keys(players).length <= MAX_PLAYERS_FOR_START) {
-            startRound();
+        if (!myRoom) return;
+        if (!myRoom.roundActive && Object.keys(myRoom.players).length >= 1) {
+            startRound(myRoom);
         }
     });
 
     socket.on('move', (data) => {
-        const p = players[socket.id];
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
         if (!p || !p.alive) return;
 
         let dx = Number(data.dx) || 0;
@@ -649,72 +709,62 @@ socket.emit('init', {
         dx /= length;
         dy /= length;
 
-let inWater = false;
-let inBush = false;
+        let inWater = false;
+        for (const w of myRoom.water) {
+            if (w.type === 'pond') {
+                const ddx = (p.x - w.cx) / w.rx;
+                const ddy = (p.y - w.cy) / w.ry;
+                if (ddx * ddx + ddy * ddy < 1) { inWater = true; break; }
+            } else {
+                if (p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h) { inWater = true; break; }
+            }
+        }
 
-for (const w of water) {
-    if (w.type === 'pond') {
-        const ddx = (p.x - w.cx) / w.rx;
-        const ddy = (p.y - w.cy) / w.ry;
-        if (ddx * ddx + ddy * ddy < 1) { inWater = true; break; }
-    } else {
-        if (p.x > w.x && p.x < w.x + w.w && p.y > w.y && p.y < w.y + w.h) { inWater = true; break; }
-    }
-}
+        p.inWater = inWater;
 
-// hidden if in water, or server will trust client bush data via state
-p.inWater = inWater;
-
-let speed = inWater ? 2.5 : 4.25;
-
-if (roundActive && sprint && p.stamina > 0) {
-            speed = 6.4;
+        let speed = inWater ? 2.5 : 4.25;
+        if (myRoom.roundActive && sprint && p.stamina > 0) {
+            speed = inWater ? 3.2 : 6.4;
             p.stamina = Math.max(0, p.stamina - 1.1);
             p.lastSprintTime = Date.now();
         } else {
-        	if (Date.now() - p.lastSprintTime > 3000) {
-          	  p.stamina = Math.min(100, p.stamina + 0.35);
-	    }
+            if (Date.now() - p.lastSprintTime > 3000) {
+                p.stamina = Math.min(100, p.stamina + 0.35);
+            }
         }
 
         const nextX = p.x + dx * speed;
         const nextY = p.y + dy * speed;
 
         const rectX = getPlayerRect(nextX, p.y);
-        let hit = collidesFurniture(rectX);
-
-	if (!collidesWorld(rectX)) {
-    		if (hit) {
-        		hit.vx += dx * 2;
-    		} else {
-        		p.x = nextX;
-    	    }
-	}
+        let hit = collidesFurniture(myRoom, rectX);
+        if (!collidesWorld(myRoom, rectX)) {
+            if (hit) hit.vx += dx * 2;
+            else p.x = nextX;
+        }
 
         const rectY = getPlayerRect(p.x, nextY);
-        let hitY = collidesFurniture(rectY);
-
-	if (!collidesWorld(rectY)) {
-    		if (hitY) {
-        		hitY.vy += dy * 2;
-    		} else {
-        		p.y = nextY;
-    	    }
-	}
+        let hitY = collidesFurniture(myRoom, rectY);
+        if (!collidesWorld(myRoom, rectY)) {
+            if (hitY) hitY.vy += dy * 2;
+            else p.y = nextY;
+        }
 
         p.x = clamp(p.x, PLAYER_RADIUS, WORLD.width - PLAYER_RADIUS);
         p.y = clamp(p.y, PLAYER_RADIUS, WORLD.height - PLAYER_RADIUS);
     });
 
     socket.on('aim', (angle) => {
-        const p = players[socket.id];
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
         if (!p) return;
         if (typeof angle === 'number') p.weaponAngle = angle;
     });
 
     socket.on('shoot', () => {
-        const p = players[socket.id];
-        if (!p || !p.alive || !roundActive) return;
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
+        if (!p || !p.alive || !myRoom.roundActive) return;
 
         const weaponName = getCurrentWeapon(p);
         if (!weaponName || !WEAPONS[weaponName]) return;
@@ -730,7 +780,7 @@ if (roundActive && sprint && p.stamina > 0) {
 
         for (let i = 0; i < weapon.pellets; i++) {
             const spread = (Math.random() * 2 - 1) * weapon.spread;
-            bullets.push({
+            myRoom.bullets.push({
                 id: `${socket.id}_${now}_${i}`,
                 x: originX,
                 y: originY,
@@ -745,34 +795,35 @@ if (roundActive && sprint && p.stamina > 0) {
     });
 
     socket.on('interact', () => {
-        const p = players[socket.id];
-        if (!p || !p.alive || !roundActive) return;
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
+        if (!p || !p.alive || !myRoom.roundActive) return;
 
-        for (let i = 0; i < chests.length; i++) {
-            const chest = chests[i];
+        for (let i = 0; i < myRoom.chests.length; i++) {
+            const chest = myRoom.chests[i];
             if (dist(p.x, p.y, chest.x, chest.y) < 52) {
                 let tookAnything = false;
                 for (const item of chest.loot) {
                     if (tryGiveLoot(p, item)) tookAnything = true;
                 }
-                if (tookAnything) chests.splice(i, 1);
+                if (tookAnything) myRoom.chests.splice(i, 1);
                 break;
             }
         }
     });
 
     socket.on('useMedkit', () => {
-        const p = players[socket.id];
-        if (!p || !p.alive || !roundActive) return;
-        if (p.medkits <= 0) return;
-        if (p.health >= 100) return;
-
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
+        if (!p || !p.alive || !myRoom.roundActive) return;
+        if (p.medkits <= 0 || p.health >= 100) return;
         p.medkits -= 1;
         p.health = Math.min(100, p.health + 40);
     });
 
     socket.on('selectSlot', (index) => {
-        const p = players[socket.id];
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
         if (!p) return;
         if (typeof index !== 'number') return;
         if (index < 0 || index >= p.inventory.length) return;
@@ -780,182 +831,155 @@ if (roundActive && sprint && p.stamina > 0) {
     });
 
     socket.on('moveInventory', ({ from, to }) => {
-        const p = players[socket.id];
+        if (!myRoom) return;
+        const p = myRoom.players[socket.id];
         if (!p) return;
         if (typeof from !== 'number' || typeof to !== 'number') return;
         if (from < 0 || from > 4 || to < 0 || to > 4) return;
-
         const temp = p.inventory[from];
         p.inventory[from] = p.inventory[to];
         p.inventory[to] = temp;
-
         if (p.selectedSlot === from) p.selectedSlot = to;
         else if (p.selectedSlot === to) p.selectedSlot = from;
     });
 
     socket.on('disconnect', () => {
-        delete players[socket.id];
+        if (!myRoom) return;
+        delete myRoom.players[socket.id];
+        // Clean up empty non-default rooms
+        if (Object.keys(myRoom.players).length === 0 && Object.keys(rooms).length > 1) {
+            delete rooms[myRoom.id];
+        }
     });
 });
 
+// One game loop per room
 setInterval(() => {
-    updateDoors();
+    for (const room of Object.values(rooms)) {
+        updateDoors(room);
 
-    if (roundActive && Date.now() >= roundEndsAt) {
-        endRound();
-    }
-
-glass = glass.filter(g => {
-    g.x += g.vx;
-    g.y += g.vy;
-
-    g.vx *= 0.9;
-    g.vy *= 0.9;
-
-    g.life--;
-    return g.life > 0;
-});
-
-    bullets = bullets.filter((b) => {
-        b.x += Math.cos(b.angle) * b.speed;
-        b.y += Math.sin(b.angle) * b.speed;
-        b.life -= 1;
-
-        if (b.life <= 0) return false;
-        if (b.x < 0 || b.y < 0 || b.x > WORLD.width || b.y > WORLD.height) return false;
-
-        const bulletRect = { x: b.x - 2, y: b.y - 2, w: 4, h: 4 };
-	// 🪟 break windows
-for (const w of windows) {
-    if (!w.broken && rectsOverlap(bulletRect, w)) {
-        w.broken = true;
-
-        for (let i = 0; i < 8; i++) {
-            glass.push({
-                x: w.x + w.w / 2,
-                y: w.y + w.h / 2,
-                vx: (Math.random() - 0.5) * 4,
-                vy: (Math.random() - 0.5) * 4,
-                life: 60 + Math.random() * 40
-            });
+        if (room.roundActive && Date.now() >= room.roundEndsAt) {
+            endRound(room);
         }
 
-        return false; // stop bullet
-    }
-}let blocked = false;
+        room.glass = room.glass.filter(g => {
+            g.x += g.vx;
+            g.y += g.vy;
+            g.vx *= 0.9;
+            g.vy *= 0.9;
+            g.life--;
+            return g.life > 0;
+        });
 
-for (const building of buildings) {
-    const segments = getWallSegments(building);
+        room.bullets = room.bullets.filter((b) => {
+            b.x += Math.cos(b.angle) * b.speed;
+            b.y += Math.sin(b.angle) * b.speed;
+            b.life -= 1;
 
-    for (const seg of segments) {
+            if (b.life <= 0) return false;
+            if (b.x < 0 || b.y < 0 || b.x > WORLD.width || b.y > WORLD.height) return false;
 
-        // check if bullet is INSIDE a broken window
-        let insideBrokenWindow = false;
+            const bulletRect = { x: b.x - 2, y: b.y - 2, w: 4, h: 4 };
 
-        for (const w of windows) {
-            if (
-                w.broken &&
-                rectsOverlap(bulletRect, {
-                    x: w.x,
-                    y: w.y,
-                    w: w.w,
-                    h: w.h
-                })
-            ) {
-                insideBrokenWindow = true;
-                break;
-            }
-        }
-
-        // only block if NOT inside the window
-        if (!insideBrokenWindow && rectsOverlap(bulletRect, seg)) {
-            blocked = true;
-            break;
-        }
-    }
-
-    if (blocked) break;
-}
-
-if (blocked) return false;
-
-        for (const id in players) {
-            if (id === b.owner) continue;
-            const p = players[id];
-            if (!p.alive) continue;
-
-            const d = dist(b.x, b.y, p.x, p.y);
-	    if (d <= PLAYER_RADIUS) {
-    		const falloff = Math.max(0.4, 1 - d / 600);
-  	 	 p.health -= b.damage * falloff;
-
-                if (p.health <= 0) {
-                    p.health = 0;
-                    p.alive = false;
-                    p.deaths += 1;
-
-                    if (players[b.owner]) players[b.owner].kills += 1;
-
-                    setTimeout(() => {
-                        if (players[id] && roundActive) {
-                            resetPlayerForNewRound(players[id]);
-                        } else if (players[id]) {
-                            players[id].alive = true;
-                            players[id].health = 100;
-                        }
-                    }, 2200);
+            for (const w of room.windows) {
+                if (!w.broken && rectsOverlap(bulletRect, w)) {
+                    w.broken = true;
+                    for (let i = 0; i < 8; i++) {
+                        room.glass.push({
+                            x: w.x + w.w / 2,
+                            y: w.y + w.h / 2,
+                            vx: (Math.random() - 0.5) * 4,
+                            vy: (Math.random() - 0.5) * 4,
+                            life: 60 + Math.random() * 40
+                        });
+                    }
+                    return false;
                 }
-
-                return false;
             }
-        }
 
-        return true;
-    });
+            let blocked = false;
+            for (const building of room.buildings) {
+                const segments = getWallSegments(building);
+                for (const seg of segments) {
+                    let insideBrokenWindow = false;
+                    for (const w of room.windows) {
+                        if (w.broken && rectsOverlap(bulletRect, { x: w.x, y: w.y, w: w.w, h: w.h })) {
+                            insideBrokenWindow = true;
+                            break;
+                        }
+                    }
+                    if (!insideBrokenWindow && rectsOverlap(bulletRect, seg)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (blocked) break;
+            }
+            if (blocked) return false;
 
-furniture.forEach(f => {
-    	// try X movement
-let nextX = f.x + f.vx;
-let rectX = { x: nextX, y: f.y, w: f.w, h: f.h };
+            for (const id in room.players) {
+                if (id === b.owner) continue;
+                const p = room.players[id];
+                if (!p.alive) continue;
 
-if (!collidesWorld(rectX)) {
-    f.x = nextX;
-} else {
-    f.vx *= -0.3; // bounce back a bit
-}
+                const d = dist(b.x, b.y, p.x, p.y);
+                if (d <= PLAYER_RADIUS) {
+                    const falloff = Math.max(0.4, 1 - d / 600);
+                    p.health -= b.damage * falloff;
 
-// try Y movement
-let nextY = f.y + f.vy;
-let rectY = { x: f.x, y: nextY, w: f.w, h: f.h };
+                    if (p.health <= 0) {
+                        p.health = 0;
+                        p.alive = false;
+                        p.deaths += 1;
+                        if (room.players[b.owner]) room.players[b.owner].kills += 1;
 
-if (!collidesWorld(rectY)) {
-    f.y = nextY;
-} else {
-    f.vy *= -0.3;
-}
+                        setTimeout(() => {
+                            if (room.players[id] && room.roundActive) {
+                                resetPlayerForNewRound(room, room.players[id]);
+                            } else if (room.players[id]) {
+                                room.players[id].alive = true;
+                                room.players[id].health = 100;
+                            }
+                        }, 2200);
+                    }
+                    return false;
+                }
+            }
+            return true;
+        });
 
-// friction
-f.vx *= 0.85;
-f.vy *= 0.85;
-    });
+        room.furniture.forEach(f => {
+            let nextX = f.x + f.vx;
+            if (!collidesWorld(room, { x: nextX, y: f.y, w: f.w, h: f.h })) f.x = nextX;
+            else f.vx *= -0.3;
 
-    io.emit('state', {
-        players,
-        bullets,
-        chests,
-	water, 
-	furniture,
-	windows,
-	glass,
-        buildings,
-	roads, 
-        leaderboard: getLeaderboard(),
-        roundActive,
-        roundTimeLeft: roundActive ? Math.max(0, Math.ceil((roundEndsAt - Date.now()) / 1000)) : 0,
-        world: WORLD,
-    });
+            let nextY = f.y + f.vy;
+            if (!collidesWorld(room, { x: f.x, y: nextY, w: f.w, h: f.h })) f.y = nextY;
+            else f.vy *= -0.3;
+
+            f.vx *= 0.85;
+            f.vy *= 0.85;
+        });
+
+        io.to(room.id).emit('state', {
+            players: room.players,
+            bullets: room.bullets,
+            chests: room.chests,
+            furniture: room.furniture,
+            windows: room.windows,
+            glass: room.glass,
+            buildings: room.buildings,
+            roads: room.roads,
+            water: room.water,
+            leaderboard: getLeaderboard(room),
+            roundActive: room.roundActive,
+            roundTimeLeft: room.roundActive ? Math.max(0, Math.ceil((room.roundEndsAt - Date.now()) / 1000)) : 0,
+            world: WORLD,
+        });
+    }
 }, TICK_RATE);
 
-http.listen(3000, () => {
-    console.log('Server running on http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => {
+    console.log('Server running on port ' + PORT);
 });
